@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>カラオケプレイヤー - 歌詞全文スクロール</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 16px; color: #a0a0ff; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    input[type="file"] { display: none; }
+    .btn {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      background: #4a4a6a;
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn:hover { background: #5a5a7a; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #6366f1; }
+    .btn-primary:hover { background: #818cf8; }
+    select {
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: #2d2d44;
+      color: #eee;
+      border: 1px solid #4a4a6a;
+      min-width: 200px;
+    }
+    .now-playing { margin-bottom: 12px; color: #888; font-size: 14px; }
+    .lyrics-wrap {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      max-height: 60vh;
+      overflow-y: auto;
+      margin-bottom: 16px;
+      line-height: 1.8;
+    }
+    .lyrics-wrap::-webkit-scrollbar { width: 8px; }
+    .lyrics-wrap::-webkit-scrollbar-track { background: #0f0f1a; border-radius: 4px; }
+    .lyrics-wrap::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 4px; }
+    .lyrics-line {
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.2s, color 0.2s;
+    }
+    .lyrics-line.current {
+      background: #6366f1;
+      color: #fff;
+    }
+    .lyrics-line.past { color: #666; }
+    audio {
+      width: 100%;
+      margin-top: 8px;
+    }
+    .hint { font-size: 12px; color: #666; margin-top: 8px; }
+    .divider { color: #555; margin: 0 4px; }
+  </style>
+</head>
+<body>
+  <h1>カラオケプレイヤー</h1>
+  <div class="controls">
+    <button type="button" class="btn btn-primary" id="openMp3">MP3（LRC）を選択</button>
+    <input type="file" id="singleSongFolderInput" webkitdirectory directory multiple>
+    <span class="divider">|</span>
+    <button type="button" class="btn" id="openFolder">フォルダから複数曲</button>
+    <input type="file" id="folderInput" webkitdirectory directory multiple>
+    <select id="songList" disabled>
+      <option value="">-- フォルダ選択後に曲を選択 --</option>
+    </select>
+  </div>
+  <div class="now-playing" id="nowPlaying"></div>
+  <div class="lyrics-wrap" id="lyricsWrap">
+    <div id="lyricsInner">「MP3（LRC）を選択」で1曲入りのフォルダを選ぶと、同名のMP3とLRCをセットにします（LRC必須）。<br>「フォルダから複数曲」でフォルダ内の曲一覧から選べます。</div>
+  </div>
+  <audio id="audio" controls></audio>
+  <p class="hint">例: my-song.mp3 → my-song.lrc（同名でLRCを用意）</p>
+
+  <script>
+    const singleSongFolderInput = document.getElementById('singleSongFolderInput');
+    const folderInput = document.getElementById('folderInput');
+    const songList = document.getElementById('songList');
+    const lyricsInner = document.getElementById('lyricsInner');
+    const audio = document.getElementById('audio');
+    const nowPlaying = document.getElementById('nowPlaying');
+
+    let files = []; // フォルダ用: { name, mp3File, lrcFile }
+
+    function applySingleSongFiles(list) {
+      const mp3s = list.filter(f => /\.mp3$/i.test(f.name));
+      const lrcMap = {};
+      list.filter(f => /\.lrc$/i.test(f.name)).forEach(f => {
+        const base = f.name.replace(/\.lrc$/i, '');
+        lrcMap[base.toLowerCase()] = f;
+      });
+      if (mp3s.length === 0) {
+        lyricsInner.innerHTML = '<p style="color:#c66">このフォルダにMP3がありません。</p>';
+        return;
+      }
+      if (mp3s.length > 1) {
+        lyricsInner.innerHTML = '<p style="color:#c66">1曲だけ入っているフォルダを選んでください。複数曲の場合は「フォルダから複数曲」を使ってください。</p>';
+        return;
+      }
+      const mp3File = mp3s[0];
+      const base = mp3File.name.replace(/\.mp3$/i, '');
+      const lrcFile = lrcMap[base.toLowerCase()] || null;
+      if (!lrcFile) {
+        lyricsInner.innerHTML = '<p style="color:#c66">同名のLRCがありません。「' + escapeHtml(base) + '.lrc」をこのフォルダに置いてください。</p>';
+        return;
+      }
+      audio.src = URL.createObjectURL(mp3File);
+      nowPlaying.textContent = '再生中: ' + base;
+      lrcFile.text().then(text => {
+        renderLyrics(parseLrc(text));
+        syncScroll();
+      });
+    }
+
+    document.getElementById('openMp3').onclick = async () => {
+      if (typeof window.showDirectoryPicker === 'function') {
+        try {
+          const dirHandle = await window.showDirectoryPicker();
+          const list = [];
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') list.push(await entry.getFile());
+          }
+          applySingleSongFiles(list);
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            lyricsInner.innerHTML = '<p style="color:#c66">フォルダを開けませんでした。別のブラウザでお試しください。</p>';
+          }
+        }
+      } else {
+        singleSongFolderInput.click();
+      }
+    };
+
+    document.getElementById('openFolder').onclick = () => folderInput.click();
+
+    singleSongFolderInput.addEventListener('change', (e) => {
+      const list = Array.from(e.target.files || []);
+      applySingleSongFiles(list);
+      e.target.value = '';
+    });
+
+    folderInput.addEventListener('change', (e) => {
+      const list = Array.from(e.target.files || []);
+      const mp3s = list.filter(f => /\.mp3$/i.test(f.name));
+      const lrcMap = {};
+      list.filter(f => /\.lrc$/i.test(f.name)).forEach(f => {
+        const base = f.name.replace(/\.lrc$/i, '');
+        lrcMap[base.toLowerCase()] = f;
+      });
+
+      files = mp3s.map(f => {
+        const base = f.name.replace(/\.mp3$/i, '');
+        return {
+          name: base,
+          mp3File: f,
+          lrcFile: lrcMap[base.toLowerCase()] || null
+        };
+      });
+
+      songList.innerHTML = '<option value="">-- 曲を選択 --</option>';
+      files.forEach((f, i) => {
+        if (!f.lrcFile) return;
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = f.name;
+        songList.appendChild(opt);
+      });
+      songList.disabled = false;
+    });
+
+    songList.addEventListener('change', () => {
+      const i = parseInt(songList.value, 10);
+      if (isNaN(i) || !files[i]) return;
+      const item = files[i];
+      audio.src = URL.createObjectURL(item.mp3File);
+      nowPlaying.textContent = '再生中: ' + item.name;
+      if (item.lrcFile) {
+        item.lrcFile.text().then(text => {
+          const lines = parseLrc(text);
+          renderLyrics(lines);
+          syncScroll();
+        });
+      } else {
+        lyricsInner.innerHTML = '<p style="color:#888">この曲には .lrc がありません。同名の .lrc を同じフォルダに置いてください。</p>';
+      }
+    });
+
+    function parseLrc(text) {
+      const lines = [];
+      const re = /^\[(\d{1,2}):(\d{1,2})(?:[.:](\d{2,3}))?\](.*)$/;
+      text.split(/\r?\n/).forEach(line => {
+        const m = line.trim().match(re);
+        if (m) {
+          const min = parseInt(m[1], 10);
+          const sec = parseInt(m[2], 10);
+          const cent = parseInt(m[3] || '0', 10);
+          const ms = (min * 60 + sec) * 1000 + (cent <= 99 ? cent * 10 : cent);
+          lines.push({ time: ms, text: m[4].trim() });
+        }
+      });
+      lines.sort((a, b) => a.time - b.time);
+      return lines;
+    }
+
+    function renderLyrics(lines) {
+      lyricsInner.innerHTML = lines.map((line, i) =>
+        `<div class="lyrics-line" data-time="${line.time}" data-index="${i}">${escapeHtml(line.text) || '&nbsp;'}</div>`
+      ).join('');
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    audio.addEventListener('timeupdate', syncScroll);
+
+    function syncScroll() {
+      const t = audio.currentTime * 1000;
+      const lines = lyricsInner.querySelectorAll('.lyrics-line');
+      lines.forEach(el => el.classList.remove('current', 'past'));
+      let current = null;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const time = parseInt(lines[i].dataset.time, 10);
+        if (time <= t) {
+          current = lines[i];
+          for (let j = 0; j < i; j++) lines[j].classList.add('past');
+          break;
+        }
+      }
+      if (current) {
+        current.classList.add('current');
+        current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  </script>
+</body>
+</html>
