@@ -73,30 +73,29 @@
     }
     .hint { font-size: 12px; color: #666; margin-top: 8px; }
     .divider { color: #555; margin: 0 4px; }
+    .folder-name { margin-left: 12px; color: #888; font-size: 14px; }
   </style>
 </head>
 <body>
   <h1>カラオケプレイヤー</h1>
   <div class="controls">
-    <button type="button" class="btn btn-primary" id="openMp3">MP3（LRC）を選択</button>
-    <input type="file" id="singleSongFolderInput" webkitdirectory directory multiple>
-    <span class="divider">|</span>
-    <button type="button" class="btn" id="openFolder">フォルダから複数曲</button>
+    <button type="button" class="btn btn-primary" id="openFolder">フォルダ選択(MP3/LRC)</button>
     <input type="file" id="folderInput" webkitdirectory directory multiple>
     <select id="songList" disabled>
       <option value="">-- フォルダ選択後に曲を選択 --</option>
     </select>
+    <span id="folderName" class="folder-name"></span>
   </div>
   <div class="now-playing" id="nowPlaying"></div>
   <div class="lyrics-wrap" id="lyricsWrap">
-    <div id="lyricsInner">「MP3（LRC）を選択」で1曲入りのフォルダを選ぶと、同名のMP3とLRCをセットにします（LRC必須）。<br>「フォルダから複数曲」でフォルダ内の曲一覧から選べます。</div>
+    <div id="lyricsInner">「フォルダ選択(MP3/LRC)」でフォルダを選ぶと、フォルダ内の曲一覧から選べます。</div>
   </div>
   <audio id="audio" controls></audio>
   <p class="hint">例: my-song.mp3 → my-song.lrc（同名でLRCを用意）</p>
 
   <script>
-    const singleSongFolderInput = document.getElementById('singleSongFolderInput');
     const folderInput = document.getElementById('folderInput');
+    const folderNameEl = document.getElementById('folderName');
     const songList = document.getElementById('songList');
     const lyricsInner = document.getElementById('lyricsInner');
     const audio = document.getElementById('audio');
@@ -104,65 +103,15 @@
 
     let files = []; // フォルダ用: { name, mp3File, lrcFile }
 
-    function applySingleSongFiles(list) {
-      const mp3s = list.filter(f => /\.mp3$/i.test(f.name));
-      const lrcMap = {};
-      list.filter(f => /\.lrc$/i.test(f.name)).forEach(f => {
-        const base = f.name.replace(/\.lrc$/i, '');
-        lrcMap[base.toLowerCase()] = f;
-      });
-      if (mp3s.length === 0) {
-        lyricsInner.innerHTML = '<p style="color:#c66">このフォルダにMP3がありません。</p>';
-        return;
-      }
-      if (mp3s.length > 1) {
-        lyricsInner.innerHTML = '<p style="color:#c66">1曲だけ入っているフォルダを選んでください。複数曲の場合は「フォルダから複数曲」を使ってください。</p>';
-        return;
-      }
-      const mp3File = mp3s[0];
-      const base = mp3File.name.replace(/\.mp3$/i, '');
-      const lrcFile = lrcMap[base.toLowerCase()] || null;
-      if (!lrcFile) {
-        lyricsInner.innerHTML = '<p style="color:#c66">同名のLRCがありません。「' + escapeHtml(base) + '.lrc」をこのフォルダに置いてください。</p>';
-        return;
-      }
-      audio.src = URL.createObjectURL(mp3File);
-      nowPlaying.textContent = '再生中: ' + base;
-      lrcFile.text().then(text => {
-        renderLyrics(parseLrc(text));
-        syncScroll();
-      });
-    }
-
-    document.getElementById('openMp3').onclick = async () => {
-      if (typeof window.showDirectoryPicker === 'function') {
-        try {
-          const dirHandle = await window.showDirectoryPicker();
-          const list = [];
-          for await (const entry of dirHandle.values()) {
-            if (entry.kind === 'file') list.push(await entry.getFile());
-          }
-          applySingleSongFiles(list);
-        } catch (err) {
-          if (err.name !== 'AbortError') {
-            lyricsInner.innerHTML = '<p style="color:#c66">フォルダを開けませんでした。別のブラウザでお試しください。</p>';
-          }
-        }
-      } else {
-        singleSongFolderInput.click();
-      }
-    };
-
     document.getElementById('openFolder').onclick = () => folderInput.click();
-
-    singleSongFolderInput.addEventListener('change', (e) => {
-      const list = Array.from(e.target.files || []);
-      applySingleSongFiles(list);
-      e.target.value = '';
-    });
 
     folderInput.addEventListener('change', (e) => {
       const list = Array.from(e.target.files || []);
+      const folderName = list.length > 0 && list[0].webkitRelativePath
+        ? list[0].webkitRelativePath.split('/')[0]
+        : '';
+      folderNameEl.textContent = folderName ? 'フォルダ: ' + folderName : '';
+
       const mp3s = list.filter(f => /\.mp3$/i.test(f.name));
       const lrcMap = {};
       list.filter(f => /\.lrc$/i.test(f.name)).forEach(f => {
