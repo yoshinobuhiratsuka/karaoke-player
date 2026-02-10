@@ -58,15 +58,30 @@
     .lyrics-wrap::-webkit-scrollbar-track { background: #0f0f1a; border-radius: 4px; }
     .lyrics-wrap::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 4px; }
     .lyrics-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
       padding: 4px 8px;
       border-radius: 6px;
       transition: background 0.2s, color 0.2s;
+    }
+    .lyrics-line-text { flex: 1; min-width: 0; }
+    .lyrics-time {
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+      color: #888;
+      font-size: 13px;
     }
     .lyrics-line.current {
       background: #6366f1;
       color: #fff;
     }
     .lyrics-line.past { color: #666; }
+    .lyrics-line.editing-current {
+      outline: 1px solid #818cf8;
+      background: #1f2937;
+    }
     audio {
       width: 100%;
       margin-top: 8px;
@@ -74,6 +89,21 @@
     .hint { font-size: 12px; color: #666; margin-top: 8px; }
     .divider { color: #555; margin: 0 4px; }
     .folder-name { margin-left: 12px; color: #888; font-size: 14px; }
+    .time-edit {
+      margin-top: 12px;
+      font-size: 13px;
+    }
+    .time-edit textarea {
+      width: 100%;
+      min-height: 120px;
+      margin-top: 8px;
+      background: #0f172a;
+      color: #eee;
+      border-radius: 8px;
+      border: 1px solid #4a4a6a;
+      padding: 8px;
+      resize: vertical;
+    }
   </style>
 </head>
 <body>
@@ -90,6 +120,10 @@
   <div class="lyrics-wrap" id="lyricsWrap">
     <div id="lyricsInner">「フォルダ選択(MP3/LRC)」でフォルダを選ぶと、フォルダ内の曲一覧から選べます。</div>
   </div>
+  <div id="timeEditControls" class="time-edit" style="display:none;">
+    <button type="button" class="btn btn-primary" id="markTime">この行に時間を打つ</button>
+    <button type="button" class="btn" id="backOneLine">1行戻す</button>
+  </div>
   <audio id="audio" controls></audio>
   <p class="hint">例: my-song.mp3 → my-song.lrc（同名でLRCを用意）</p>
 
@@ -100,8 +134,17 @@
     const lyricsInner = document.getElementById('lyricsInner');
     const audio = document.getElementById('audio');
     const nowPlaying = document.getElementById('nowPlaying');
+    const timeEditControls = document.getElementById('timeEditControls');
+    const markTimeBtn = document.getElementById('markTime');
+    const backOneLineBtn = document.getElementById('backOneLine');
 
     let files = []; // フォルダ用: { name, mp3File, lrcFile }
+    let enableSync = true; // 時間タグ付き歌詞のときだけ同期スクロールする
+    let isTimingMode = false;
+    let plainLyricsLines = [];
+    let editableLineIndexes = [];
+    let currentEditPos = 0;
+    let timingMsByLineIndex = [];
 
     document.getElementById('openFolder').onclick = () => folderInput.click();
 
@@ -130,7 +173,6 @@
 
       songList.innerHTML = '<option value="">-- 曲を選択 --</option>';
       files.forEach((f, i) => {
-        if (!f.lrcFile) return;
         const opt = document.createElement('option');
         opt.value = i;
         opt.textContent = f.name;
@@ -145,16 +187,64 @@
       const item = files[i];
       audio.src = URL.createObjectURL(item.mp3File);
       nowPlaying.textContent = '再生中: ' + item.name;
+      resetTimeEdit();
       if (item.lrcFile) {
         item.lrcFile.text().then(text => {
-          const lines = parseLrc(text);
-          renderLyrics(lines);
-          syncScroll();
+          const hasTimeTag = /^\s*\[\d{1,2}:\d{1,2}(?:[.:]\d{2,3})?\]/m.test(text);
+          if (hasTimeTag) {
+            const lines = parseLrc(text);
+            renderLyrics(lines);
+            enableSync = true;
+            syncScroll();
+          } else {
+            enableSync = false;
+            renderPlainLyricsFromText(text);
+          }
         });
       } else {
+        enableSync = false;
+        resetTimeEdit();
         lyricsInner.innerHTML = '<p style="color:#888">この曲には .lrc がありません。同名の .lrc を同じフォルダに置いてください。</p>';
       }
     });
+
+    function resetTimeEdit() {
+      isTimingMode = false;
+      plainLyricsLines = [];
+      editableLineIndexes = [];
+      currentEditPos = 0;
+      timingMsByLineIndex = [];
+      if (timeEditControls) timeEditControls.style.display = 'none';
+      if (markTimeBtn) markTimeBtn.disabled = true;
+      if (backOneLineBtn) backOneLineBtn.disabled = true;
+      const linesEls = lyricsInner.querySelectorAll('.lyrics-line');
+      linesEls.forEach(el => el.classList.remove('editing-current'));
+    }
+
+    function renderPlainLyricsFromText(text) {
+      plainLyricsLines = text.split(/\r?\n/);
+      editableLineIndexes = [];
+      timingMsByLineIndex = new Array(plainLyricsLines.length).fill(null);
+      const html = plainLyricsLines.map((line, idx) => {
+        if (line.trim() !== '') {
+          editableLineIndexes.push(idx);
+        }
+        return `<div class="lyrics-line" data-line-index="${idx}"><span class="lyrics-line-text">${escapeHtml(line) || '&nbsp;'}</span><span class="lyrics-time" data-line-index="${idx}"></span></div>`;
+      }).join('');
+      lyricsInner.innerHTML = html;
+      if (editableLineIndexes.length > 0) {
+        timeEditControls.style.display = 'block';
+        isTimingMode = true;
+        currentEditPos = -1;
+        markTimeBtn.disabled = false;
+        backOneLineBtn.disabled = true;
+        // -1 = まだどの行も選択していない。1回目のクリックで1行目をハイライト、2回目で1行目に時間を打って2行目へ
+      } else {
+        timeEditControls.style.display = 'none';
+        isTimingMode = false;
+        markTimeBtn.disabled = true;
+      }
+    }
 
     function parseLrc(text) {
       const lines = [];
@@ -188,6 +278,7 @@
     audio.addEventListener('timeupdate', syncScroll);
 
     function syncScroll() {
+      if (!enableSync) return;
       const t = audio.currentTime * 1000;
       const lines = lyricsInner.querySelectorAll('.lyrics-line');
       lines.forEach(el => el.classList.remove('current', 'past'));
@@ -205,6 +296,112 @@
         current.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
+
+    function setCurrentEditHighlight() {
+      const linesEls = lyricsInner.querySelectorAll('.lyrics-line');
+      linesEls.forEach(el => el.classList.remove('editing-current'));
+      if (!isTimingMode || currentEditPos < 0 || currentEditPos >= editableLineIndexes.length) return;
+      const lineIndex = editableLineIndexes[currentEditPos];
+      const target = lyricsInner.querySelector(`.lyrics-line[data-line-index="${lineIndex}"]`);
+      if (target) {
+        target.classList.add('editing-current');
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    function formatTimeTag(ms) {
+      const totalMs = Math.max(0, Math.floor(ms));
+      const totalSec = Math.floor(totalMs / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      const cent = Math.floor((totalMs % 1000) / 10);
+      const mm = String(min).padStart(2, '0');
+      const ss = String(sec).padStart(2, '0');
+      const cc = String(cent).padStart(2, '0');
+      return `[${mm}:${ss}.${cc}]`;
+    }
+
+    function formatTimeDisplay(ms) {
+      const totalMs = Math.max(0, Math.floor(ms));
+      const totalSec = Math.floor(totalMs / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      const cent = Math.floor((totalMs % 1000) / 10);
+      return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(cent).padStart(2, '0')}`;
+    }
+
+    function setLineTimeDisplay(lineIndex, ms) {
+      const el = lyricsInner.querySelector(`.lyrics-time[data-line-index="${lineIndex}"]`);
+      if (el) el.textContent = ms != null ? formatTimeDisplay(ms) : '';
+    }
+
+    function buildLrcFromTiming() {
+      if (!plainLyricsLines.length) return '';
+      return plainLyricsLines.map((line, idx) => {
+        const text = line;
+        if (text.trim() === '') return '';
+        const ms = timingMsByLineIndex[idx];
+        if (ms == null) return text;
+        return formatTimeTag(ms) + text;
+      }).join('\n');
+    }
+
+    markTimeBtn.addEventListener('click', () => {
+      if (!isTimingMode) return;
+      if (currentEditPos === -1) {
+        currentEditPos = 0;
+        backOneLineBtn.disabled = false;
+        const lineIndex = editableLineIndexes[0];
+        const ms = Math.floor(audio.currentTime * 1000);
+        timingMsByLineIndex[lineIndex] = ms;
+        setLineTimeDisplay(lineIndex, ms);
+        setCurrentEditHighlight();
+        return;
+      }
+      if (currentEditPos >= editableLineIndexes.length) return;
+      const ms = Math.floor(audio.currentTime * 1000);
+      const isLastLine = (currentEditPos === editableLineIndexes.length - 1);
+      if (isLastLine) {
+        const lineIndex = editableLineIndexes[currentEditPos];
+        timingMsByLineIndex[lineIndex] = ms;
+        setLineTimeDisplay(lineIndex, ms);
+        currentEditPos++;
+        const linesEls = lyricsInner.querySelectorAll('.lyrics-line');
+        linesEls.forEach(el => el.classList.remove('editing-current'));
+        markTimeBtn.disabled = true;
+      } else {
+        currentEditPos++;
+        const lineIndex = editableLineIndexes[currentEditPos];
+        timingMsByLineIndex[lineIndex] = ms;
+        setLineTimeDisplay(lineIndex, ms);
+        setCurrentEditHighlight();
+      }
+    });
+
+    backOneLineBtn.addEventListener('click', () => {
+      if (!isTimingMode) return;
+      if (currentEditPos === -1) return;
+      if (currentEditPos >= editableLineIndexes.length) {
+        currentEditPos = editableLineIndexes.length - 1;
+        const lineIndex = editableLineIndexes[currentEditPos];
+        timingMsByLineIndex[lineIndex] = null;
+        setLineTimeDisplay(lineIndex, null);
+        setCurrentEditHighlight();
+        markTimeBtn.disabled = false;
+        return;
+      }
+      const lineIndexToClear = editableLineIndexes[currentEditPos];
+      timingMsByLineIndex[lineIndexToClear] = null;
+      setLineTimeDisplay(lineIndexToClear, null);
+      currentEditPos--;
+      if (currentEditPos === -1) {
+        const linesEls = lyricsInner.querySelectorAll('.lyrics-line');
+        linesEls.forEach(el => el.classList.remove('editing-current'));
+        backOneLineBtn.disabled = true;
+      } else {
+        setCurrentEditHighlight();
+      }
+    });
   </script>
 </body>
 </html>
