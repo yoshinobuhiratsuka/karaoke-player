@@ -109,20 +109,22 @@
 <body>
   <h1>カラオケプレイヤー</h1>
   <div class="controls">
-    <button type="button" class="btn btn-primary" id="openFolder">フォルダ選択(MP3/LRC)</button>
+    <button type="button" class="btn btn-primary" id="openFolder">曲フォルダを選択</button>
     <input type="file" id="folderInput" webkitdirectory directory multiple>
     <select id="songList" disabled>
-      <option value="">-- フォルダ選択後に曲を選択 --</option>
+      <option value="">-- 曲フォルダを選択後に曲を選択 --</option>
     </select>
     <span id="folderName" class="folder-name"></span>
+    <button type="button" class="btn" id="editLrcTiming" style="display:none;">LRCの時間を編集</button>
   </div>
   <div class="now-playing" id="nowPlaying"></div>
   <div class="lyrics-wrap" id="lyricsWrap">
-    <div id="lyricsInner">「フォルダ選択(MP3/LRC)」でフォルダを選ぶと、フォルダ内の曲一覧から選べます。</div>
+    <div id="lyricsInner">「曲フォルダを選択」でMP3が入ったフォルダを選ぶと、曲一覧から選べます。</div>
   </div>
   <div id="timeEditControls" class="time-edit" style="display:none;">
     <button type="button" class="btn btn-primary" id="markTime">この行に時間を打つ</button>
     <button type="button" class="btn" id="backOneLine">1行戻す</button>
+    <button type="button" class="btn" id="saveLrc">LRCを保存</button>
   </div>
   <audio id="audio" controls></audio>
   <p class="hint">例: my-song.mp3 → my-song.lrc（同名でLRCを用意）</p>
@@ -137,40 +139,35 @@
     const timeEditControls = document.getElementById('timeEditControls');
     const markTimeBtn = document.getElementById('markTime');
     const backOneLineBtn = document.getElementById('backOneLine');
+    const editLrcTimingBtn = document.getElementById('editLrcTiming');
 
     let files = []; // フォルダ用: { name, mp3File, lrcFile }
-    let enableSync = true; // 時間タグ付き歌詞のときだけ同期スクロールする
+    let currentDirectoryHandle = null;
+    let currentSongName = '';
+    let currentParsedLrcLines = null; // 時間タグ付きLRCを読み込んだときのパース結果（編集モード用）
+    let enableSync = true;
     let isTimingMode = false;
     let plainLyricsLines = [];
     let editableLineIndexes = [];
     let currentEditPos = 0;
     let timingMsByLineIndex = [];
 
-    document.getElementById('openFolder').onclick = () => folderInput.click();
+    const LRC_NO_TIME = Number.MAX_SAFE_INTEGER; // 時間タグのない行用。表示はブランク・保存時はタグなし
 
-    folderInput.addEventListener('change', (e) => {
-      const list = Array.from(e.target.files || []);
-      const folderName = list.length > 0 && list[0].webkitRelativePath
-        ? list[0].webkitRelativePath.split('/')[0]
-        : '';
-      folderNameEl.textContent = folderName ? 'フォルダ: ' + folderName : '';
-
+    function buildFilesFromList(list) {
       const mp3s = list.filter(f => /\.mp3$/i.test(f.name));
       const lrcMap = {};
       list.filter(f => /\.lrc$/i.test(f.name)).forEach(f => {
         const base = f.name.replace(/\.lrc$/i, '');
         lrcMap[base.toLowerCase()] = f;
       });
-
-      files = mp3s.map(f => {
+      return mp3s.map(f => {
         const base = f.name.replace(/\.mp3$/i, '');
-        return {
-          name: base,
-          mp3File: f,
-          lrcFile: lrcMap[base.toLowerCase()] || null
-        };
+        return { name: base, mp3File: f, lrcFile: lrcMap[base.toLowerCase()] || null };
       });
+    }
 
+    function fillSongList() {
       songList.innerHTML = '<option value="">-- 曲を選択 --</option>';
       files.forEach((f, i) => {
         const opt = document.createElement('option');
@@ -179,12 +176,50 @@
         songList.appendChild(opt);
       });
       songList.disabled = false;
+    }
+
+    document.getElementById('openFolder').onclick = async () => {
+      if (typeof window.showDirectoryPicker === 'function') {
+        try {
+          const handle = await window.showDirectoryPicker({
+            mode: 'readwrite',
+            startIn: currentDirectoryHandle ?? undefined
+          });
+          currentDirectoryHandle = handle;
+          folderNameEl.textContent = 'フォルダ: ' + handle.name;
+          const list = [];
+          for await (const entry of handle.values()) {
+            if (entry.kind === 'file') {
+              const f = await entry.getFile();
+              list.push(f);
+            }
+          }
+          files = buildFilesFromList(list);
+          fillSongList();
+        } catch (err) {
+          if (err.name !== 'AbortError') console.error(err);
+        }
+        return;
+      }
+      folderInput.click();
+    };
+
+    folderInput.addEventListener('change', (e) => {
+      currentDirectoryHandle = null;
+      const list = Array.from(e.target.files || []);
+      const folderName = list.length > 0 && list[0].webkitRelativePath
+        ? list[0].webkitRelativePath.split('/')[0]
+        : '';
+      folderNameEl.textContent = folderName ? 'フォルダ: ' + folderName : '';
+      files = buildFilesFromList(list);
+      fillSongList();
     });
 
     songList.addEventListener('change', () => {
       const i = parseInt(songList.value, 10);
       if (isNaN(i) || !files[i]) return;
       const item = files[i];
+      currentSongName = item.name;
       audio.src = URL.createObjectURL(item.mp3File);
       nowPlaying.textContent = '再生中: ' + item.name;
       resetTimeEdit();
@@ -193,17 +228,23 @@
           const hasTimeTag = /^\s*\[\d{1,2}:\d{1,2}(?:[.:]\d{2,3})?\]/m.test(text);
           if (hasTimeTag) {
             const lines = parseLrc(text);
+            currentParsedLrcLines = lines;
             renderLyrics(lines);
             enableSync = true;
             syncScroll();
+            if (editLrcTimingBtn) editLrcTimingBtn.style.display = '';
           } else {
+            currentParsedLrcLines = null;
             enableSync = false;
             renderPlainLyricsFromText(text);
+            if (editLrcTimingBtn) editLrcTimingBtn.style.display = 'none';
           }
         });
       } else {
+        currentParsedLrcLines = null;
         enableSync = false;
         resetTimeEdit();
+        if (editLrcTimingBtn) editLrcTimingBtn.style.display = 'none';
         lyricsInner.innerHTML = '<p style="color:#888">この曲には .lrc がありません。同名の .lrc を同じフォルダに置いてください。</p>';
       }
     });
@@ -219,6 +260,28 @@
       if (backOneLineBtn) backOneLineBtn.disabled = true;
       const linesEls = lyricsInner.querySelectorAll('.lyrics-line');
       linesEls.forEach(el => el.classList.remove('editing-current'));
+    }
+
+    function startLrcTimeEdit() {
+      if (!currentParsedLrcLines || currentParsedLrcLines.length === 0) return;
+      enableSync = false;
+      plainLyricsLines = currentParsedLrcLines.map(l => l.text);
+      timingMsByLineIndex = currentParsedLrcLines.map(l => l.time);
+      editableLineIndexes = [];
+      plainLyricsLines.forEach((line, idx) => {
+        if (line.trim() !== '') editableLineIndexes.push(idx);
+      });
+      const html = plainLyricsLines.map((line, idx) =>
+        `<div class="lyrics-line" data-line-index="${idx}"><span class="lyrics-line-text">${escapeHtml(line) || '&nbsp;'}</span><span class="lyrics-time" data-line-index="${idx}"></span></div>`
+      ).join('');
+      lyricsInner.innerHTML = html;
+      plainLyricsLines.forEach((_, idx) => setLineTimeDisplay(idx, timingMsByLineIndex[idx]));
+      timeEditControls.style.display = 'block';
+      isTimingMode = true;
+      currentEditPos = -1;
+      markTimeBtn.disabled = false;
+      backOneLineBtn.disabled = true;
+      if (editLrcTimingBtn) editLrcTimingBtn.style.display = 'none';
     }
 
     function renderPlainLyricsFromText(text) {
@@ -250,16 +313,20 @@
       const lines = [];
       const re = /^\[(\d{1,2}):(\d{1,2})(?:[.:](\d{2,3}))?\](.*)$/;
       text.split(/\r?\n/).forEach(line => {
-        const m = line.trim().match(re);
+        const trimmed = line.trim();
+        const m = trimmed.match(re);
         if (m) {
           const min = parseInt(m[1], 10);
           const sec = parseInt(m[2], 10);
           const cent = parseInt(m[3] || '0', 10);
           const ms = (min * 60 + sec) * 1000 + (cent <= 99 ? cent * 10 : cent);
           lines.push({ time: ms, text: m[4].trim() });
+        } else if (trimmed !== '') {
+          // 時間タグのない行も表示に含める。再生時はハイライトされない（前の行で止まる）
+          lines.push({ time: LRC_NO_TIME, text: trimmed });
         }
       });
-      lines.sort((a, b) => a.time - b.time);
+      // ファイルの行順を保持（時間でソートしない）
       return lines;
     }
 
@@ -332,7 +399,7 @@
 
     function setLineTimeDisplay(lineIndex, ms) {
       const el = lyricsInner.querySelector(`.lyrics-time[data-line-index="${lineIndex}"]`);
-      if (el) el.textContent = ms != null ? formatTimeDisplay(ms) : '';
+      if (el) el.textContent = (ms != null && ms !== LRC_NO_TIME) ? formatTimeDisplay(ms) : '';
     }
 
     function buildLrcFromTiming() {
@@ -341,9 +408,32 @@
         const text = line;
         if (text.trim() === '') return '';
         const ms = timingMsByLineIndex[idx];
-        if (ms == null) return text;
-        return formatTimeTag(ms) + text;
+        if (ms == null || ms === LRC_NO_TIME) return text;
+        return formatTimeTag(ms) + ' ' + text;
       }).join('\n');
+    }
+
+    async function saveLrcToFile() {
+      const content = buildLrcFromTiming();
+      if (!content || !currentSongName) return;
+      const filename = currentSongName + '.lrc';
+      if (currentDirectoryHandle) {
+        try {
+          const fileHandle = await currentDirectoryHandle.getFileHandle(filename, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          return;
+        } catch (err) {
+          console.error(err);
+        }
+      }
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
     }
 
     markTimeBtn.addEventListener('click', () => {
@@ -377,6 +467,10 @@
         setCurrentEditHighlight();
       }
     });
+
+    document.getElementById('saveLrc').addEventListener('click', () => saveLrcToFile());
+
+    editLrcTimingBtn.addEventListener('click', () => startLrcTimeEdit());
 
     backOneLineBtn.addEventListener('click', () => {
       if (!isTimingMode) return;
