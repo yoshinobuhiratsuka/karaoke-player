@@ -121,8 +121,8 @@
   </style>
 </head>
 <body>
-  <!-- version: 1.0.0 -->
-  <h1>カラオケプレイヤー ver.1.0.0</h1>
+  <!-- version: 1.0.1 -->
+  <h1>カラオケプレイヤー ver.1.0.1</h1>
   <div class="controls">
     <button type="button" class="btn btn-primary" id="openFolder">曲フォルダを選択</button>
     <input type="file" id="folderInput" webkitdirectory directory multiple>
@@ -216,10 +216,12 @@
           }
           files = buildFilesFromList(list);
           fillSongList();
+          // 成功したのでここで終了
+          return;
         } catch (err) {
+          // キャンセル以外はログだけ出して、古いフォルダ入力にフォールバック
           if (err.name !== 'AbortError') console.error(err);
         }
-        return;
       }
       folderInput.click();
     };
