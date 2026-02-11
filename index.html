@@ -6,23 +6,28 @@
   <title>カラオケプレイヤー - 歌詞全文スクロール</title>
   <style>
     * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
     body {
       font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
-      margin: 0;
-      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
       background: #1a1a2e;
       color: #eee;
-      min-height: 100vh;
+      height: 100vh;
+      max-height: 100dvh;
+      overflow: hidden;
     }
-    h1 { font-size: 1.25rem; margin: 0 0 16px; color: #a0a0ff; }
+    h1 { font-size: 1.25rem; margin: 0 0 10px; color: #a0a0ff; flex-shrink: 0; }
     .controls {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 10px;
       position: relative;
       z-index: 10;
+      flex-shrink: 0;
     }
     input[type="file"] { display: none; }
     .btn {
@@ -52,14 +57,15 @@
       cursor: pointer;
       touch-action: manipulation;
     }
-    .now-playing { margin-bottom: 12px; color: #888; font-size: 14px; }
+    .now-playing { margin-bottom: 8px; color: #888; font-size: 14px; flex-shrink: 0; }
     .lyrics-wrap {
       background: #16213e;
       border-radius: 12px;
-      padding: 20px;
-      max-height: 60vh;
+      padding: 12px;
+      flex: 1 1 0;
+      min-height: 0;
       overflow-y: auto;
-      margin-bottom: 16px;
+      margin-bottom: 10px;
       line-height: 1.8;
     }
     .lyrics-wrap::-webkit-scrollbar { width: 8px; }
@@ -92,20 +98,23 @@
     }
     audio {
       width: 100%;
-      margin-top: 8px;
+      margin-top: 0;
+      flex-shrink: 0;
     }
-    .hint { font-size: 12px; color: #666; margin-top: 8px; }
+    .hint { font-size: 12px; color: #666; margin-top: 4px; flex-shrink: 0; }
     .divider { color: #555; margin: 0 4px; }
     .folder-name { margin-left: 12px; color: #888; font-size: 14px; }
     .time-edit {
-      margin-top: 12px;
+      margin-top: 8px;
       font-size: 13px;
+      flex-shrink: 0;
     }
     .save-message {
-      margin: 8px 0 12px;
+      margin: 4px 0 8px;
       font-size: 14px;
       color: #4ade80;
       min-height: 1.4em;
+      flex-shrink: 0;
     }
     .time-edit textarea {
       width: 100%;
@@ -121,8 +130,8 @@
   </style>
 </head>
 <body>
-  <!-- version: 1.0.2 -->
-  <h1>カラオケプレイヤー ver.1.0.2</h1>
+  <!-- version: 1.0.3 -->
+  <h1>カラオケプレイヤー ver.1.0.3</h1>
   <div class="controls">
     <button type="button" class="btn btn-primary" id="openFolder">曲フォルダを選択</button>
     <input type="file" id="folderInput" webkitdirectory directory multiple>
