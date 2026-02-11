@@ -21,6 +21,8 @@
       gap: 12px;
       align-items: center;
       margin-bottom: 16px;
+      position: relative;
+      z-index: 10;
     }
     input[type="file"] { display: none; }
     .btn {
@@ -37,12 +39,18 @@
     .btn-primary { background: #6366f1; }
     .btn-primary:hover { background: #818cf8; }
     select {
-      padding: 8px 12px;
+      padding: 10px 14px;
+      min-height: 44px;
       border-radius: 6px;
       background: #2d2d44;
       color: #eee;
       border: 1px solid #4a4a6a;
       min-width: 200px;
+      font-size: 16px;
+      -webkit-appearance: menulist;
+      appearance: menulist;
+      cursor: pointer;
+      touch-action: manipulation;
     }
     .now-playing { margin-bottom: 12px; color: #888; font-size: 14px; }
     .lyrics-wrap {
@@ -94,7 +102,7 @@
       font-size: 13px;
     }
     .save-message {
-      margin: 8px 0 0;
+      margin: 8px 0 12px;
       font-size: 14px;
       color: #4ade80;
       min-height: 1.4em;
@@ -113,7 +121,8 @@
   </style>
 </head>
 <body>
-  <h1>カラオケプレイヤー</h1>
+  <!-- version: 1.0.0 -->
+  <h1>カラオケプレイヤー ver.1.0.0</h1>
   <div class="controls">
     <button type="button" class="btn btn-primary" id="openFolder">曲フォルダを選択</button>
     <input type="file" id="folderInput" webkitdirectory directory multiple>
@@ -123,6 +132,7 @@
     <span id="folderName" class="folder-name"></span>
     <button type="button" class="btn" id="editLrcTiming" style="display:none;">LRCの時間を編集</button>
   </div>
+  <p id="saveMessage" class="save-message" aria-live="polite"></p>
   <div class="now-playing" id="nowPlaying"></div>
   <div class="lyrics-wrap" id="lyricsWrap">
     <div id="lyricsInner">「曲フォルダを選択」でMP3が入ったフォルダを選ぶと、曲一覧から選べます。</div>
@@ -131,7 +141,6 @@
     <button type="button" class="btn btn-primary" id="markTime">この行に時間を打つ</button>
     <button type="button" class="btn" id="backOneLine">1行戻す</button>
     <button type="button" class="btn" id="saveLrc">LRCを保存</button>
-    <p id="saveMessage" class="save-message" aria-live="polite"></p>
   </div>
   <audio id="audio" controls></audio>
   <p class="hint">例: my-song.mp3 → my-song.lrc（同名でLRCを用意）</p>
@@ -183,6 +192,10 @@
         songList.appendChild(opt);
       });
       songList.disabled = false;
+      if (folderNameEl && files.length === 0) {
+        const msg = '曲が見つかりませんでした。スマホではフォルダ選択が使えない場合があります。';
+        folderNameEl.textContent = folderNameEl.textContent ? folderNameEl.textContent + ' ※' + msg : msg;
+      }
     }
 
     document.getElementById('openFolder').onclick = async () => {
@@ -480,14 +493,14 @@
         currentEditPos = 0;
         backOneLineBtn.disabled = false;
         const lineIndex = editableLineIndexes[0];
-        const ms = Math.floor(audio.currentTime * 1000);
+        const ms = Math.max(0, Math.floor(audio.currentTime * 1000) - 300);
         timingMsByLineIndex[lineIndex] = ms;
         setLineTimeDisplay(lineIndex, ms);
         setCurrentEditHighlight();
         return;
       }
       if (currentEditPos >= editableLineIndexes.length) return;
-      const ms = Math.floor(audio.currentTime * 1000);
+      const ms = Math.max(0, Math.floor(audio.currentTime * 1000) - 300);
       const isLastLine = (currentEditPos === editableLineIndexes.length - 1);
       if (isLastLine) {
         const lineIndex = editableLineIndexes[currentEditPos];
