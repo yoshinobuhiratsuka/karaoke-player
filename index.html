@@ -27,13 +27,13 @@
       padding: 10px 16px;
       border: none;
       border-radius: 8px;
-      background: #4a4a6a;
+      background: #5a5a7a;
       color: #fff;
       cursor: pointer;
       font-size: 14px;
     }
-    .btn:hover { background: #5a5a7a; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn:hover { background: #6a6a8a; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; background: #4a4a6a; }
     .btn-primary { background: #6366f1; }
     .btn-primary:hover { background: #818cf8; }
     select {
@@ -93,6 +93,12 @@
       margin-top: 12px;
       font-size: 13px;
     }
+    .save-message {
+      margin: 8px 0 0;
+      font-size: 14px;
+      color: #4ade80;
+      min-height: 1.4em;
+    }
     .time-edit textarea {
       width: 100%;
       min-height: 120px;
@@ -125,6 +131,7 @@
     <button type="button" class="btn btn-primary" id="markTime">この行に時間を打つ</button>
     <button type="button" class="btn" id="backOneLine">1行戻す</button>
     <button type="button" class="btn" id="saveLrc">LRCを保存</button>
+    <p id="saveMessage" class="save-message" aria-live="polite"></p>
   </div>
   <audio id="audio" controls></audio>
   <p class="hint">例: my-song.mp3 → my-song.lrc（同名でLRCを用意）</p>
@@ -413,6 +420,19 @@
       }).join('\n');
     }
 
+    let saveMessageTimer = null;
+
+    function showSaveMessage() {
+      const el = document.getElementById('saveMessage');
+      if (!el) return;
+      if (saveMessageTimer) clearTimeout(saveMessageTimer);
+      el.textContent = 'LRCを保存しました';
+      saveMessageTimer = setTimeout(() => {
+        el.textContent = '';
+        saveMessageTimer = null;
+      }, 10000);
+    }
+
     async function saveLrcToFile() {
       const content = buildLrcFromTiming();
       if (!content || !currentSongName) return;
@@ -423,6 +443,15 @@
           const writable = await fileHandle.createWritable();
           await writable.write(content);
           await writable.close();
+          showSaveMessage();
+          const lines = parseLrc(content);
+          currentParsedLrcLines = lines;
+          enableSync = true;
+          isTimingMode = false;
+          timeEditControls.style.display = 'none';
+          renderLyrics(lines);
+          syncScroll();
+          if (editLrcTimingBtn) editLrcTimingBtn.style.display = '';
           return;
         } catch (err) {
           console.error(err);
@@ -434,6 +463,15 @@
       a.download = filename;
       a.click();
       URL.revokeObjectURL(a.href);
+      showSaveMessage();
+      const lines = parseLrc(content);
+      currentParsedLrcLines = lines;
+      enableSync = true;
+      isTimingMode = false;
+      timeEditControls.style.display = 'none';
+      renderLyrics(lines);
+      syncScroll();
+      if (editLrcTimingBtn) editLrcTimingBtn.style.display = '';
     }
 
     markTimeBtn.addEventListener('click', () => {
