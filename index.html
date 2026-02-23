@@ -21,7 +21,21 @@
   <p id="saveMessage" class="save-message" aria-live="polite"></p>
   <div class="now-playing" id="nowPlaying"></div>
   <div class="lyrics-wrap" id="lyricsWrap">
-    <div id="lyricsInner">「曲フォルダを選択」でMP3が入ったフォルダを選ぶと、曲一覧から選べます。</div>
+    <div id="lyricsInner">
+      <p>「曲フォルダを選択」で音楽ファイルが入ったフォルダを選ぶと、曲一覧から選べます。</p>
+      <div style="margin-top:16px;color:#aaa;font-size:14px;line-height:1.7;">
+        <p style="margin:0 0 8px;color:#c0c0ff;font-weight:bold;">1. 歌詞ファイル(.lrc)を用意</p>
+        <p style="margin:0 0 4px;padding-left:16px;">テキストファイルに歌詞を書いて、拡張子を .txt から .lrc に変えるだけ。</p>
+        <p style="margin:0 0 4px;padding-left:16px;color:#888;">例: song.mp3 と同じフォルダに song.lrc を置く</p>
+        <p style="margin:0 0 16px;padding-left:16px;color:#888;">※ 歌詞ファイルがなくても音楽の再生はできます。</p>
+        <p style="margin:0 0 8px;color:#c0c0ff;font-weight:bold;">2. フォルダを選んで再生</p>
+        <p style="margin:0 0 16px;padding-left:16px;">上の「曲フォルダを選択」で音楽ファイルが入ったフォルダを選択。</p>
+        <p style="margin:0 0 8px;color:#c0c0ff;font-weight:bold;">3. 歌詞のタイミングを設定</p>
+        <p style="margin:0 0 16px;padding-left:16px;">曲を再生しながら、各行の表示タイミングをこのプレイヤー上で設定できます。</p>
+        <p style="margin:0 0 8px;color:#c0c0ff;font-weight:bold;">4. カラオケスタート</p>
+        <p style="margin:0 0 0;padding-left:16px;">タイミング設定後は、再生に合わせて歌詞が自動でハイライト＆スクロールされます。</p>
+      </div>
+    </div>
   </div>
   <div id="timeEditControls" class="time-edit" style="display:none;">
     <button type="button" class="btn btn-primary" id="markTime">この行に時間を打つ</button>
@@ -29,7 +43,7 @@
     <button type="button" class="btn" id="saveLrc">LRCを保存</button>
   </div>
   <audio id="audio" controls></audio>
-  <p class="hint">例: my-song.mp3 → my-song.lrc（同名でLRCを用意）</p>
+  <p class="hint">歌詞ファイル(.lrc)はテキストに歌詞を書き、拡張子を .lrc にして音楽ファイルと同名で配置</p>
 
   <script src="app.js"></script>
 </body>

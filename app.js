@@ -22,15 +22,17 @@ let timingMsByLineIndex = [];
 
 const LRC_NO_TIME = Number.MAX_SAFE_INTEGER; // 時間タグのない行用。表示はブランク・保存時はタグなし
 
+const AUDIO_EXTS = /\.(mp3|m4a|aac|wav|ogg|flac|webm)$/i;
+
 function buildFilesFromList(list) {
-  const mp3s = list.filter(f => /\.mp3$/i.test(f.name));
+  const audioFiles = list.filter(f => AUDIO_EXTS.test(f.name));
   const lrcMap = {};
   list.filter(f => /\.lrc$/i.test(f.name)).forEach(f => {
     const base = f.name.replace(/\.lrc$/i, '');
     lrcMap[base.toLowerCase()] = f;
   });
-  return mp3s.map(f => {
-    const base = f.name.replace(/\.mp3$/i, '');
+  return audioFiles.map(f => {
+    const base = f.name.replace(AUDIO_EXTS, '');
     return { name: base, mp3File: f, lrcFile: lrcMap[base.toLowerCase()] || null };
   });
 }
